@@ -81,9 +81,10 @@ export async function GET(request: Request) {
         },
       });
 
-      // Add virtual draft papers for subjects that have no real paper record
+      // Add virtual draft papers for subjects that have no paper record for their active academic year
       for (const subject of subjects) {
-        if (subject.papers.length === 0) {
+        const hasPaperForYear = subject.papers.some((p) => p.academicYear === subject.academicYear);
+        if (!hasPaperForYear) {
           lecturerPapers.push({
             id: `virtual-${subject.id}`, // prefix with virtual so client knows to create it on upload
             subjectId: subject.id,
@@ -140,7 +141,7 @@ export async function POST(request: Request) {
       data: {
         subjectId,
         lecturerId,
-        academicYear: academicYear || "2025/2026",
+        academicYear: academicYear || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`,
         semester: Number(semester) || 1,
         status: clientStatusToDb(status || "DRAFT") as any,
         paperUrl: paperUrl || null,

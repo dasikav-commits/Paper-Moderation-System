@@ -24,11 +24,20 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { code, name, academicYear, semester, lecturerId, moderatorId, department } = body;
+    let { code, name, academicYear, semester, lecturerId, moderatorId, department } = body;
 
-    if (!code || !name || !academicYear || !semester) {
+    if (!academicYear) {
+      try {
+        const setting = await (prisma as any).systemSetting.findUnique({ where: { key: 'academicYear' } });
+        academicYear = setting?.value || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`;
+      } catch {
+        academicYear = `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`;
+      }
+    }
+
+    if (!code || !name || !semester) {
       return NextResponse.json(
-        { error: "Subject code, name, academic year, and semester are required" },
+        { error: "Subject code, name, and semester are required" },
         { status: 400 }
       );
     }

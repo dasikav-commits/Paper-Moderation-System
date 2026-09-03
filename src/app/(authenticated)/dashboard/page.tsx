@@ -106,6 +106,7 @@ export default function DepartmentHeadDashboard() {
         body: JSON.stringify({
           lecturerId: editAssignmentForm.lecturerId || null,
           moderatorId: editAssignmentForm.moderatorId || null,
+          academicYear: currentYear,
         }),
       });
 

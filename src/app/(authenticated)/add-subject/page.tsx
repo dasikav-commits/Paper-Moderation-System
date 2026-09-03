@@ -18,6 +18,17 @@ export default function AddSubjectPage() {
     }
   }, [user, currentRole, router]);
 
+  const [academicYear, setAcademicYear] = useState('');
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.academicYear) setAcademicYear(data.academicYear);
+      })
+      .catch((err) => console.error('Failed to load settings in add-subject:', err));
+  }, []);
+
   const [formData, setFormData] = useState({
     code: '',
     name: '',
@@ -34,8 +45,8 @@ export default function AddSubjectPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          academicYear: '2025/2026',
-          department: user?.department || 'Department of Computing & Information Systems',
+          academicYear: academicYear || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`,
+          department: user?.department || '',
         }),
       });
 
