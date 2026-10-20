@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "build": "node scripts/prisma-generate.mjs && next build",
     "postinstall": "node scripts/prisma-generate.mjs",
     "start": "next start",
