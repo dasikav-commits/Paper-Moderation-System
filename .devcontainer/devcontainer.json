@@ -1,0 +1,10 @@
+{
+  "name": "Paper Moderation System",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Paper Moderation System (Next.js)",
+      "onAutoForward": "openBrowser"
+    }
+  }
+}
