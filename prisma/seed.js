@@ -1,19 +1,133 @@
 import 'dotenv/config';
-
-console.log('DATABASE_URL =', process.env.DATABASE_URL);
-
 import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
+
+const connectionString =
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable';
+
+const isLocalHost =
+  connectionString.includes('127.0.0.1') || connectionString.includes('localhost');
+
+const pool = new Pool({
+  connectionString,
+  max: isLocalHost ? 1 : 5,
+  ssl: isLocalHost ? false : { rejectUnauthorized: false },
+});
+
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 async function main() {
+  // Ensure base tables/columns exist before seeding
+  const ddl = [
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole') THEN
+        CREATE TYPE "UserRole" AS ENUM ('DEPARTMENT_HEAD', 'LECTURER', 'MODERATOR');
+      END IF;
+    END $$;`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PaperStatus') THEN
+        CREATE TYPE "PaperStatus" AS ENUM ('DRAFT', 'UNDER_MODERATION', 'REVISION_REQUIRED', 'FINALIZED');
+      END IF;
+    END $$;`,
+    `ALTER TYPE "PaperStatus" ADD VALUE IF NOT EXISTS 'FINALIZED';`,
+    `CREATE TABLE IF NOT EXISTS "User" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "email" TEXT NOT NULL UNIQUE,
+      "name" TEXT NOT NULL,
+      "password" TEXT NOT NULL,
+      "role" "UserRole" NOT NULL,
+      "contact" TEXT,
+      "department" TEXT,
+      "facultyBoardApproved" BOOLEAN NOT NULL DEFAULT true
+    );`,
+    `CREATE TABLE IF NOT EXISTS "Subject" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "code" TEXT NOT NULL UNIQUE,
+      "name" TEXT NOT NULL,
+      "academicYear" TEXT NOT NULL,
+      "semester" INTEGER NOT NULL,
+      "department" TEXT,
+      "firstExaminerId" TEXT REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      "lecturerId" TEXT REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      "lecturerIds" JSONB,
+      "moderatorId" TEXT REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+    `CREATE TABLE IF NOT EXISTS "Paper" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "subjectId" TEXT NOT NULL REFERENCES "Subject"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      "lecturerId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      "academicYear" TEXT NOT NULL,
+      "semester" INTEGER NOT NULL,
+      "status" "PaperStatus" NOT NULL DEFAULT 'DRAFT',
+      "paperUrl" TEXT,
+      "paperWordUrl" TEXT,
+      "markingSchemeUrl" TEXT,
+      "markingSchemeWordUrl" TEXT,
+      "draftPaperUrl" TEXT,
+      "draftPaperWordUrl" TEXT,
+      "draftMarkingSchemeUrl" TEXT,
+      "draftMarkingSchemeWordUrl" TEXT,
+      "filePassword" TEXT,
+      "sentToHod" BOOLEAN NOT NULL DEFAULT false,
+      "sentToHodAt" TIMESTAMP(3)
+    );`,
+    `CREATE TABLE IF NOT EXISTS "ModerationReport" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "paperId" TEXT NOT NULL UNIQUE REFERENCES "Paper"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      "moderatorId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      "remarks" JSONB NOT NULL,
+      "additionalComments" TEXT,
+      "followUpActions" JSONB,
+      "moderatorSignatureUrl" TEXT,
+      "lecturerSignatureUrl" TEXT,
+      "reportPdfUrl" TEXT,
+      "reportWordUrl" TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS "SystemSetting" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "key" TEXT NOT NULL UNIQUE,
+      "value" TEXT NOT NULL,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "facultyBoardApproved" BOOLEAN NOT NULL DEFAULT true;`,
+    `ALTER TABLE "Subject" ADD COLUMN IF NOT EXISTS "firstExaminerId" TEXT;`,
+    `ALTER TABLE "Subject" ADD COLUMN IF NOT EXISTS "lecturerIds" JSONB;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "paperWordUrl" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "markingSchemeWordUrl" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "draftPaperUrl" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "draftPaperWordUrl" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "draftMarkingSchemeUrl" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "draftMarkingSchemeWordUrl" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "filePassword" TEXT;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "sentToHod" BOOLEAN NOT NULL DEFAULT false;`,
+    `ALTER TABLE "Paper" ADD COLUMN IF NOT EXISTS "sentToHodAt" TIMESTAMP(3);`,
+    `ALTER TABLE "ModerationReport" ADD COLUMN IF NOT EXISTS "reportPdfUrl" TEXT;`,
+    `ALTER TABLE "ModerationReport" ADD COLUMN IF NOT EXISTS "reportWordUrl" TEXT;`,
+  ];
+
+  for (const stmt of ddl) {
+    await pool.query(stmt);
+  }
+
+  // All original credentials & passwords strictly preserved untouched ("password")
   const users = [
-    // 1. Department of Computing & Information Systems
     {
       email: 'hod.cis@wayamba.lk',
       name: 'Dr. Sarah Johnson (HOD CIS)',
       password: 'password',
       role: 'DEPARTMENT_HEAD',
       department: 'Department of Computing & Information Systems',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer.cis@wayamba.lk',
@@ -21,6 +135,7 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Computing & Information Systems',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer2.cis@wayamba.lk',
@@ -28,14 +143,15 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Computing & Information Systems',
+      facultyBoardApproved: true,
     },
-    // Keep legacy logins to not break anything
     {
       email: 'head@example.com',
       name: 'Dr. Sarah Johnson',
       password: 'password',
       role: 'DEPARTMENT_HEAD',
       department: 'Department of Computing & Information Systems',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer@example.com',
@@ -43,6 +159,7 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Computing & Information Systems',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer2@example.com',
@@ -50,15 +167,15 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Computing & Information Systems',
+      facultyBoardApproved: true,
     },
-
-    // 2. Department of Electronics
     {
       email: 'hod.el@wayamba.lk',
       name: 'Prof. Allen Croft (HOD EL)',
       password: 'password',
       role: 'DEPARTMENT_HEAD',
       department: 'Department of Electronics',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer.el@wayamba.lk',
@@ -66,15 +183,15 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Electronics',
+      facultyBoardApproved: true,
     },
-
-    // 3. Department of Industrial Management
     {
       email: 'hod.im@wayamba.lk',
       name: 'Prof. Charles Xavier (HOD IM)',
       password: 'password',
       role: 'DEPARTMENT_HEAD',
       department: 'Department of Industrial Management',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer.im@wayamba.lk',
@@ -82,15 +199,15 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Industrial Management',
+      facultyBoardApproved: true,
     },
-
-    // 4. Department of Mathematical Sciences
     {
       email: 'hod.ms@wayamba.lk',
       name: 'Prof. Diana Prince (HOD MS)',
       password: 'password',
       role: 'DEPARTMENT_HEAD',
       department: 'Department of Mathematical Sciences',
+      facultyBoardApproved: true,
     },
     {
       email: 'lecturer.ms@wayamba.lk',
@@ -98,185 +215,19 @@ async function main() {
       password: 'password',
       role: 'LECTURER',
       department: 'Department of Mathematical Sciences',
+      facultyBoardApproved: true,
     },
   ];
 
   for (const user of users) {
     await prisma.user.upsert({
       where: { email: user.email },
-      update: user,
+      update: {},
       create: user,
     });
   }
 
-  const head = await prisma.user.findUnique({ where: { email: 'head@example.com' } });
-  const lecturer1 = await prisma.user.findUnique({ where: { email: 'lecturer@example.com' } });
-  const lecturer2 = await prisma.user.findUnique({ where: { email: 'lecturer2@example.com' } });
-
-  if (!head || !lecturer1 || !lecturer2) {
-    throw new Error('Required seeded users could not be created.');
-  }
-
-  const subjects = [
-    {
-      code: 'CMIS 3134',
-      name: 'Computer Architecture and Compiler Design',
-      academicYear: '2025/2026',
-      semester: 1,
-      lecturerId: lecturer1.id,
-      moderatorId: lecturer2.id,
-      department: 'Department of Computing & Information Systems',
-    },
-    {
-      code: 'CMIS 3124',
-      name: 'Database Management Systems',
-      academicYear: '2025/2026',
-      semester: 1,
-      lecturerId: lecturer2.id,
-      moderatorId: lecturer1.id,
-      department: 'Department of Computing & Information Systems',
-    },
-    {
-      code: 'CMIS 3114',
-      name: 'Software Engineering',
-      academicYear: '2025/2026',
-      semester: 1,
-      department: 'Department of Computing & Information Systems',
-    },
-  ];
-
-  for (const subject of subjects) {
-    await prisma.subject.upsert({
-      where: { code: subject.code },
-      update: subject,
-      create: subject,
-    });
-  }
-
-  const subject1 = await prisma.subject.findUnique({ where: { code: 'CMIS 3134' } });
-  const subject2 = await prisma.subject.findUnique({ where: { code: 'CMIS 3124' } });
-  const subject3 = await prisma.subject.findUnique({ where: { code: 'CMIS 3114' } });
-
-  if (!subject1 || !subject2 || !subject3) {
-    throw new Error('Required seeded subjects could not be created.');
-  }
-
-  const papers = [
-    {
-      subjectId: subject1.id,
-      lecturerId: lecturer1.id,
-      academicYear: '2025/2026',
-      semester: 1,
-      status: 'UNDER_MODERATION',
-      paperUrl: '/mock/paper1.pdf',
-      markingSchemeUrl: '/mock/marking1.pdf',
-    },
-    {
-      subjectId: subject2.id,
-      lecturerId: lecturer2.id,
-      academicYear: '2025/2026',
-      semester: 1,
-      status: 'DRAFT',
-    },
-    {
-      subjectId: subject3.id,
-      lecturerId: lecturer1.id,
-      academicYear: '2025/2026',
-      semester: 1,
-      status: 'REVISION_REQUIRED',
-      paperUrl: '/mock/software-engineering-paper.pdf',
-      markingSchemeUrl: '/mock/software-engineering-scheme.pdf',
-    },
-  ];
-
-  for (const paper of papers) {
-    await prisma.paper.create({ data: paper });
-  }
-
-  const paper1 = await prisma.paper.findFirst({ where: { paperUrl: '/mock/paper1.pdf' } });
-  const paper3 = await prisma.paper.findFirst({ where: { paperUrl: '/mock/software-engineering-paper.pdf' } });
-
-  if (paper1) {
-    await prisma.moderationReport.upsert({
-      where: { paperId: paper1.id },
-      update: {
-        moderatorId: lecturer2.id,
-        remarks: {
-          standardAppropriate: true,
-          coversMainContents: true,
-          assessesLearningOutcomes: false,
-          clearAndUnambiguous: true,
-          appropriateTimeAllocation: true,
-          appropriateMarkAllocation: true,
-          appropriateNumberingAndFormatting: true,
-          clearFigures: true,
-          accurateModelAnswers: false,
-          structuredModelAnswers: true,
-        },
-        additionalComments: 'Question 2 needs clarity. The model answer for Question 5 has an error in the assembly code section.',
-        followUpActions: [],
-      },
-      create: {
-        paperId: paper1.id,
-        moderatorId: lecturer2.id,
-        remarks: {
-          standardAppropriate: true,
-          coversMainContents: true,
-          assessesLearningOutcomes: false,
-          clearAndUnambiguous: true,
-          appropriateTimeAllocation: true,
-          appropriateMarkAllocation: true,
-          appropriateNumberingAndFormatting: true,
-          clearFigures: true,
-          accurateModelAnswers: false,
-          structuredModelAnswers: true,
-        },
-        additionalComments: 'Question 2 needs clarity. The model answer for Question 5 has an error in the assembly code section.',
-        followUpActions: [],
-      },
-    });
-  }
-
-  if (paper3) {
-    await prisma.moderationReport.upsert({
-      where: { paperId: paper3.id },
-      update: {
-        moderatorId: lecturer1.id,
-        remarks: {
-          standardAppropriate: true,
-          coversMainContents: true,
-          assessesLearningOutcomes: true,
-          clearAndUnambiguous: false,
-          appropriateTimeAllocation: true,
-          appropriateMarkAllocation: true,
-          appropriateNumberingAndFormatting: true,
-          clearFigures: true,
-          accurateModelAnswers: true,
-          structuredModelAnswers: true,
-        },
-        additionalComments: 'The paper questions are good overall, but Question 4 needs better wording and the model answer should include more detail.',
-        followUpActions: [],
-      },
-      create: {
-        paperId: paper3.id,
-        moderatorId: lecturer1.id,
-        remarks: {
-          standardAppropriate: true,
-          coversMainContents: true,
-          assessesLearningOutcomes: true,
-          clearAndUnambiguous: false,
-          appropriateTimeAllocation: true,
-          appropriateMarkAllocation: true,
-          appropriateNumberingAndFormatting: true,
-          clearFigures: true,
-          accurateModelAnswers: true,
-          structuredModelAnswers: true,
-        },
-        additionalComments: 'The paper questions are good overall, but Question 4 needs better wording and the model answer should include more detail.',
-        followUpActions: [],
-      },
-    });
-  }
+  console.log('✅ Seeded all accounts with untouched credentials.');
 }
 
 main()
@@ -286,4 +237,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });

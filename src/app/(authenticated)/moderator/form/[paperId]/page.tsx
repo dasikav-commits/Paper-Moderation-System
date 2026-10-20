@@ -5,12 +5,9 @@ import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Send, Eye, Download, Upload } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { useToast } from '@/components/Toast';
-import { isAccessibleUrl } from '@/lib/fileUtils';
+import { isAccessibleUrl, uploadDocumentFile } from '@/lib/fileUtils';
+import { MODERATION_CRITERIA } from '@/lib/reportGenerator';
 
-/** Extracts the level from a subject code.
- * e.g. "CMIS 4114" → 4, "ELTN 3223" → 3
- * Looks for the first digit in the numeric portion of the code.
- */
 function getLevelFromCode(subjectCode: string): number {
   const match = subjectCode?.match(/\d/);
   return match ? parseInt(match[0], 10) : 0;
@@ -27,7 +24,7 @@ export default function ModeratorFormPage() {
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const { showToast, ToastElement } = useToast();
-  const [remarks, setRemarks] = useState({
+  const [remarks, setRemarks] = useState<Record<string, boolean>>({
     standardAppropriate: false,
     coversMainContents: false,
     assessesLearningOutcomes: false,
@@ -46,8 +43,7 @@ export default function ModeratorFormPage() {
       try {
         const res = await fetch(`/api/papers/${paperId}`);
         if (res.ok) {
-          const data = await res.json();
-          setPaper(data);
+          setPaper(await res.json());
         }
       } catch (e) {
         console.error(e);
@@ -71,62 +67,34 @@ export default function ModeratorFormPage() {
     return (
       <div className="p-8 text-center">
         <h1 className="text-2xl font-bold text-red-600">Paper not found</h1>
-        <button onClick={() => router.push('/moderator/dashboard')} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded bg-indigo-600 text-white">
+        <button
+          onClick={() => router.push('/moderator/dashboard')}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer"
+        >
           Back to Dashboard
         </button>
       </div>
     );
   }
 
-  const remarkLabels = [
-    { key: 'standardAppropriate', label: 'The questions are up to the standard appropriate for the level being assessed.' },
-    { key: 'coversMainContents', label: 'Examination paper appropriately covers the main contents in the syllabus.' },
-    { key: 'assessesLearningOutcomes', label: 'Questions assess the learning outcomes appropriately.' },
-    { key: 'clearAndUnambiguous', label: 'Questions are clear and unambiguous.' },
-    { key: 'appropriateTimeAllocation', label: 'Time allocation for the questions is appropriate.' },
-    { key: 'appropriateMarkAllocation', label: 'Mark allocation for the questions is appropriate.' },
-    { key: 'appropriateNumberingAndFormatting', label: 'Numbering of questions, sub-sections and pages and page formatting are appropriate.' },
-    { key: 'clearFigures', label: 'Figures are clear and correctly labeled.' },
-    { key: 'accurateModelAnswers', label: 'Model answers are accurate.' },
-    { key: 'structuredModelAnswers', label: 'Model answers are structured with breakdown of marks.' },
-  ];
-
-  const uploadFile = async (file: File, folder: string): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('folder', folder);
-
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const errData = await res.json();
-      throw new Error(errData.error || 'Signature upload failed');
-    }
-
-    const data = await res.json();
-    return data.url;
-  };
-
   const handleSubmit = async () => {
     if (!additionalComments.trim()) {
-      showToast('Please add additional comments', 'warning');
+      showToast('Please add additional comments for the First Examiner.', 'warning');
       return;
     }
     if (!signatureFile) {
-      showToast('Please upload your signature image', 'warning');
+      showToast('Please upload your signature image.', 'warning');
       return;
     }
     if (!user) return;
 
     setSubmitting(true);
     try {
-      // 1. Upload signature image
-      const moderatorSignatureUrl = await uploadFile(signatureFile, `signatures-moderator/${paperId}`);
+      const moderatorSignatureUrl = await uploadDocumentFile(
+        signatureFile,
+        `signatures-moderator/${paperId}`
+      );
 
-      // 2. Post report
       const response = await fetch('/api/moderation-reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -140,17 +108,11 @@ export default function ModeratorFormPage() {
       });
 
       if (response.ok) {
-        // Also update paper status to revision_required
-        await fetch(`/api/papers/${paperId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            status: 'revision_required',
-          }),
-        });
-
-        showToast('Moderation report submitted successfully!', 'success');
-        setTimeout(() => router.push('/moderator/dashboard'), 1500);
+        showToast(
+          'Moderation report submitted! Returned to First Examiner for revision & finalization.',
+          'success'
+        );
+        setTimeout(() => router.push('/moderator/dashboard'), 1200);
       } else {
         showToast('Failed to submit moderation report', 'error');
       }
@@ -162,108 +124,127 @@ export default function ModeratorFormPage() {
     }
   };
 
-  const handleCancel = () => {
-    router.push('/moderator/dashboard');
-  };
-
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto">
       {ToastElement}
       <button
-        onClick={handleCancel}
-        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
+        onClick={() => router.push('/moderator/dashboard')}
+        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 cursor-pointer"
       >
         <ArrowLeft className="w-5 h-5" />
-        Back to Dashboard
+        Back to Moderator Portal
       </button>
 
-      <div className="bg-white rounded-lg shadow mb-6">
+      <div className="bg-white rounded-2xl shadow mb-6 overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900">Examination Question Paper Moderation</h1>
-          <p className="text-gray-600 mt-1">Wayamba University of Sri Lanka - Faculty of Applied Sciences</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Examination Question Paper Moderation
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Wayamba University of Sri Lanka — Faculty of Applied Sciences
+          </p>
         </div>
 
         <div className="p-6 border-b border-gray-200 bg-gray-50">
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
-              <span className="text-gray-600">Name of the Examination:</span>
-              <p className="font-medium">Bachelor of Science Degree Examination - February 2026</p>
+              <span className="text-gray-600">Course Code &amp; Title:</span>
+              <p className="font-semibold text-gray-900">
+                {paper.subjectCode} – {paper.subjectName}
+              </p>
             </div>
             <div>
-              <span className="text-gray-600">Level & Semester:</span>
-              <p className="font-medium">Level {getLevelFromCode(paper.subjectCode)} - Semester {paper.semester}</p>
+              <span className="text-gray-600">First Examiner (Paper Setter):</span>
+              <p className="font-semibold text-indigo-700">
+                {paper.firstExaminerName || paper.lecturerName}
+              </p>
             </div>
             <div>
-              <span className="text-gray-600">Academic Year:</span>
-              <p className="font-medium">{paper.academicYear}</p>
+              <span className="text-gray-600">Level &amp; Semester:</span>
+              <p className="font-medium">
+                Level {getLevelFromCode(paper.subjectCode)} — Semester {paper.semester}
+              </p>
             </div>
             <div>
-              <span className="text-gray-600">Department:</span>
-              <p className="font-medium">{paper.department}</p>
-            </div>
-            <div>
-              <span className="text-gray-600">Subject:</span>
-              <p className="font-medium">{paper.subjectName}</p>
-            </div>
-            <div>
-              <span className="text-gray-600">Course code & Title:</span>
-              <p className="font-medium">{paper.subjectCode} – {paper.subjectName}</p>
+              <span className="text-gray-600">Academic Year &amp; Department:</span>
+              <p className="font-medium">
+                {paper.academicYear} • {paper.department}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Real PDF View Section */}
-        <div className="p-6 border-b border-gray-200 bg-blue-50">
-          <h2 className="text-lg font-semibold text-blue-900 mb-3">Submitted Files for Review</h2>
-          <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
-            {isAccessibleUrl(paper.paperUrl) ? (
+        {/* Submitted PDF + Word Files */}
+        <div className="p-6 border-b border-gray-200 bg-blue-50/70">
+          <h2 className="text-lg font-semibold text-blue-950 mb-3">
+            Submitted Examination Files for Review (PDF &amp; Word)
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {isAccessibleUrl(paper.paperUrl) && (
               <a
                 href={paper.paperUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium text-sm"
               >
-                <Eye className="w-5 h-5" />
-                View Submitted Paper
+                <Eye className="w-4 h-4" />
+                View Paper (PDF)
               </a>
-            ) : (
-              <span className="px-4 py-3 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg font-medium">
-                {paper.paperUrl ? 'Paper unavailable (uploaded before deployment)' : 'Paper not uploaded'}
-              </span>
             )}
-            
-            {isAccessibleUrl(paper.markingSchemeUrl) ? (
+            {isAccessibleUrl(paper.paperWordUrl) && (
+              <a
+                href={paper.paperWordUrl}
+                download
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium text-sm"
+              >
+                <Download className="w-4 h-4" />
+                Download Paper (Word .docx)
+              </a>
+            )}
+            {isAccessibleUrl(paper.markingSchemeUrl) && (
               <a
                 href={paper.markingSchemeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-700 text-white rounded-xl hover:bg-slate-800 font-medium text-sm"
               >
-                <Eye className="w-5 h-5" />
-                View Submitted Marking Scheme
+                <Eye className="w-4 h-4" />
+                View Marking Scheme (PDF)
               </a>
-            ) : (
-              <span className="px-4 py-3 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg font-medium">
-                {paper.markingSchemeUrl ? 'Scheme unavailable (uploaded before deployment)' : 'Marking Scheme not uploaded'}
-              </span>
+            )}
+            {isAccessibleUrl(paper.markingSchemeWordUrl) && (
+              <a
+                href={paper.markingSchemeWordUrl}
+                download
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-600 text-white rounded-xl hover:bg-slate-700 font-medium text-sm"
+              >
+                <Download className="w-4 h-4" />
+                Download Marking Scheme (Word .docx)
+              </a>
             )}
           </div>
         </div>
 
         <div className="p-6">
-          <h2 className="text-xl font-semibold mb-4 font-sans">Moderator's Report</h2>
+          <h2 className="text-xl font-semibold mb-4">Moderator&apos;s Report</h2>
 
-          <div className="overflow-x-auto mb-6">
+          <div className="overflow-x-auto mb-6 border border-gray-200 rounded-xl">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Moderator Remarks</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">Yes</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">No</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                    Moderator Remarks
+                  </th>
+                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">
+                    Yes
+                  </th>
+                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">
+                    No
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {remarkLabels.map((item, index) => (
+                {MODERATION_CRITERIA.map((item, index) => (
                   <tr key={item.key} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-700">
                       {index + 1}. {item.label}
@@ -272,7 +253,7 @@ export default function ModeratorFormPage() {
                       <input
                         type="radio"
                         name={item.key}
-                        checked={remarks[item.key as keyof typeof remarks] === true}
+                        checked={remarks[item.key] === true}
                         onChange={() => setRemarks({ ...remarks, [item.key]: true })}
                         className="w-4 h-4 text-blue-600"
                       />
@@ -281,7 +262,7 @@ export default function ModeratorFormPage() {
                       <input
                         type="radio"
                         name={item.key}
-                        checked={remarks[item.key as keyof typeof remarks] === false}
+                        checked={remarks[item.key] === false}
                         onChange={() => setRemarks({ ...remarks, [item.key]: false })}
                         className="w-4 h-4 text-blue-600"
                       />
@@ -299,27 +280,27 @@ export default function ModeratorFormPage() {
             <textarea
               value={additionalComments}
               onChange={(e) => setAdditionalComments(e.target.value)}
-              rows={6}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter your comments and suggestions..."
+              rows={5}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter detailed moderation comments and recommended revisions..."
             />
           </div>
 
-          <div className="border border-blue-100 bg-blue-50/30 rounded-lg p-5 mb-6">
-            <h3 className="text-sm font-semibold text-blue-905 uppercase tracking-wider mb-3">Moderator Digital Signature</h3>
+          <div className="border border-blue-100 bg-blue-50/40 rounded-xl p-5 mb-6">
+            <h3 className="text-sm font-semibold text-blue-950 uppercase tracking-wider mb-3">
+              Moderator Digital Signature
+            </h3>
             <div className="space-y-4 text-sm text-gray-700">
-              <p className="flex justify-between border-b border-blue-100/50 pb-1">
+              <p className="flex justify-between border-b border-blue-100 pb-1">
                 <span className="text-gray-500">Digitally Signed By:</span>
                 <span className="font-semibold text-gray-900">{user?.name}</span>
               </p>
-              <p className="flex justify-between border-b border-blue-100/50 pb-1">
-                <span className="text-gray-500">Date & Time:</span>
-                <span className="font-mono text-gray-950 font-medium">{new Date().toLocaleString()}</span>
-              </p>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Upload Signature Image (PNG/JPG)</label>
-                <div className="border border-dashed border-gray-300 rounded-lg p-4 bg-white hover:border-blue-500 transition-colors">
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                  Upload Signature Image (PNG/JPG)
+                </label>
+                <div className="border border-dashed border-gray-300 rounded-xl p-4 bg-white hover:border-blue-500 transition-colors">
                   <input
                     type="file"
                     accept="image/*"
@@ -327,28 +308,17 @@ export default function ModeratorFormPage() {
                     className="hidden"
                     id="moderator-sig-upload"
                   />
-                  <label htmlFor="moderator-sig-upload" className="flex flex-col items-center cursor-pointer">
+                  <label
+                    htmlFor="moderator-sig-upload"
+                    className="flex flex-col items-center cursor-pointer"
+                  >
                     <Upload className="w-8 h-8 text-gray-400 mb-1" />
                     <span className="text-xs text-gray-600">
                       {signatureFile ? signatureFile.name : 'Click to upload signature image'}
                     </span>
-                    {signatureFile && <span className="text-[10px] text-green-600 mt-1">✓ Signature image selected</span>}
                   </label>
                 </div>
-                {signatureFile && (
-                  <div className="mt-3 border rounded p-2 bg-gray-50 flex justify-center">
-                    <img
-                      src={URL.createObjectURL(signatureFile)}
-                      alt="Signature Preview"
-                      className="max-h-16 object-contain"
-                    />
-                  </div>
-                )}
               </div>
-
-              <p className="text-xs text-blue-700 italic pt-1">
-                * Submitting this moderation form will officially apply your digital signature to this report.
-              </p>
             </div>
           </div>
 
@@ -356,14 +326,14 @@ export default function ModeratorFormPage() {
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 cursor-pointer"
             >
               <Send className="w-5 h-5" />
-              {submitting ? 'Submitting...' : 'Submit Report'}
+              {submitting ? 'Submitting Report...' : 'Submit Moderation Report'}
             </button>
             <button
-              onClick={handleCancel}
-              className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              onClick={() => router.push('/moderator/dashboard')}
+              className="px-6 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors font-medium cursor-pointer"
             >
               Cancel
             </button>

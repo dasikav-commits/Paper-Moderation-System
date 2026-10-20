@@ -4,42 +4,45 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
-    "postinstall": "prisma generate",
+    "build": "node scripts/prisma-generate.mjs && next build",
+    "postinstall": "node scripts/prisma-generate.mjs",
     "start": "next start",
     "lint": "eslint",
     "prisma": "prisma",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "node scripts/prisma-generate.mjs",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "dotenv -e .env -- prisma db seed",
+    "prisma:seed": "node prisma/seed.js",
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@heroui/react": "^3.1.0",
-    "@prisma/client": "^5.15.0",
+    "@pdfsmaller/pdf-encrypt-lite": "^1.2.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "@supabase/supabase-js": "^2.106.2",
+    "docx": "^9.13.0",
+    "dotenv": "^17.4.2",
     "framer-motion": "^12.40.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.17.0",
     "next": "16.2.6",
-    "prisma": "^5.15.0",
+    "officecrypto-tool": "^0.0.19",
+    "pg": "^8.21.0",
+    "prisma": "^7.10.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "pg": "^8.21.0",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
   }
 }
