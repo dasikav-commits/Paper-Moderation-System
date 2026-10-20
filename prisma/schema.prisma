@@ -3,9 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 enum UserRole {
@@ -22,84 +20,103 @@ enum PaperStatus {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  email       String   @unique
-  name        String
-  password    String
-  role        UserRole
-  contact     String?
-
-  department  String?
+  email                String   @unique
+  name                 String
+  password             String
+  role                 UserRole
+  contact              String?
+  department           String?
+  facultyBoardApproved Boolean  @default(true)
 
   // relations
-  lecturedSubjects   Subject[] @relation("LecturerSubjects")
-  moderatedSubjects  Subject[] @relation("ModeratorSubjects")
+  firstExaminerSubjects Subject[] @relation("FirstExaminerSubjects")
+  lecturedSubjects      Subject[] @relation("LecturerSubjects")
+  moderatedSubjects     Subject[] @relation("ModeratorSubjects")
 
-  papers      Paper[]
-  reports     ModerationReport[]
+  papers  Paper[]
+  reports ModerationReport[]
 }
 
 model Subject {
-  id            String   @id @default(cuid())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  code          String   @unique
-  name          String
-  academicYear  String
-  semester      Int
-  department    String?
-
-  lecturerId    String?
-  lecturer      User? @relation("LecturerSubjects", fields: [lecturerId], references: [id])
-
-  moderatorId   String?
-  moderator     User? @relation("ModeratorSubjects", fields: [moderatorId], references: [id])
-
-  papers        Paper[]
-}
-
-model Paper {
-  id                String   @id @default(cuid())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  subjectId         String
-  subject           Subject @relation(fields: [subjectId], references: [id])
-
-  lecturerId        String
-  lecturer          User @relation(fields: [lecturerId], references: [id])
-
-  academicYear      String
-  semester          Int
-
-  status            PaperStatus @default(DRAFT)
-
-  paperUrl          String?
-  markingSchemeUrl  String?
-
-  moderationReport  ModerationReport?
-}
-
-model ModerationReport {
   id              String   @id @default(cuid())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  paperId         String   @unique
-  paper           Paper    @relation(fields: [paperId], references: [id])
+  code            String   @unique
+  name            String
+  academicYear    String
+  semester        Int
+  department      String?
 
-  moderatorId     String
-  moderator       User     @relation(fields: [moderatorId], references: [id])
+  firstExaminerId String?
+  firstExaminer   User?    @relation("FirstExaminerSubjects", fields: [firstExaminerId], references: [id])
 
-  remarks         Json
-  additionalComments String?
-  followUpActions Json?
+  lecturerId      String?
+  lecturer        User?    @relation("LecturerSubjects", fields: [lecturerId], references: [id])
+
+  lecturerIds     Json?
+
+  moderatorId     String?
+  moderator       User?    @relation("ModeratorSubjects", fields: [moderatorId], references: [id])
+
+  papers          Paper[]
+}
+
+model Paper {
+  id                        String      @id @default(cuid())
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+
+  subjectId                 String
+  subject                   Subject     @relation(fields: [subjectId], references: [id])
+
+  lecturerId                String
+  lecturer                  User        @relation(fields: [lecturerId], references: [id])
+
+  academicYear              String
+  semester                  Int
+
+  status                    PaperStatus @default(DRAFT)
+
+  paperUrl                  String?
+  paperWordUrl              String?
+  markingSchemeUrl          String?
+  markingSchemeWordUrl      String?
+
+  draftPaperUrl             String?
+  draftPaperWordUrl         String?
+  draftMarkingSchemeUrl     String?
+  draftMarkingSchemeWordUrl String?
+
+  filePassword              String?
+  sentToHod                 Boolean     @default(false)
+  sentToHodAt               DateTime?
+
+  moderationReport          ModerationReport?
+}
+
+model ModerationReport {
+  id                    String   @id @default(cuid())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  paperId               String   @unique
+  paper                 Paper    @relation(fields: [paperId], references: [id])
+
+  moderatorId           String
+  moderator             User     @relation(fields: [moderatorId], references: [id])
+
+  remarks               Json
+  additionalComments    String?
+  followUpActions       Json?
   moderatorSignatureUrl String?
-  lecturerSignatureUrl String?
+  lecturerSignatureUrl  String?
+  reportPdfUrl          String?
+  reportWordUrl         String?
 }
 
 model SystemSetting {

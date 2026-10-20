@@ -4,8 +4,13 @@ export interface Subject {
   name: string;
   academicYear: string;
   semester: number;
+  department?: string;
+  firstExaminerId?: string;
+  firstExaminerName?: string;
   lecturerId?: string;
   lecturerName?: string;
+  lecturerIds?: string[];
+  lecturers?: Array<{ id: string; name: string; email?: string }>;
   moderatorId?: string;
   moderatorName?: string;
 }
@@ -15,15 +20,30 @@ export interface Paper {
   subjectId: string;
   subjectCode: string;
   subjectName: string;
+  department?: string;
+  firstExaminerId?: string;
+  firstExaminerName?: string;
   lecturerId: string;
   lecturerName: string;
+  lecturerIds?: string[];
+  lecturers?: Array<{ id: string; name: string; email?: string }>;
+  moderatorId?: string;
+  moderatorName?: string;
   academicYear: string;
   semester: number;
   status: 'draft' | 'submitted' | 'under_moderation' | 'revision_required' | 'finalized';
   paperUrl?: string;
+  paperWordUrl?: string;
   markingSchemeUrl?: string;
-  finalPaperUrl?: string;
-  finalMarkingSchemeUrl?: string;
+  markingSchemeWordUrl?: string;
+  draftPaperUrl?: string;
+  draftPaperWordUrl?: string;
+  draftMarkingSchemeUrl?: string;
+  draftMarkingSchemeWordUrl?: string;
+  hasPasswordProtection?: boolean;
+  sentToHod?: boolean;
+  sentToHodAt?: string;
+  hasReport?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,7 +67,10 @@ export interface ModerationReport {
   };
   additionalComments: string;
   followUpActions: string[];
+  moderatorSignatureUrl?: string;
+  lecturerSignatureUrl?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AcademicSettings {

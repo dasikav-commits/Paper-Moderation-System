@@ -9,13 +9,25 @@ export interface User {
   isDepartmentHead: boolean;
   isLecturer: boolean;
   isModerator: boolean;
+  facultyBoardApproved?: boolean;
+  department: string;
+  contact?: string;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
   department: string;
   contact?: string;
 }
 
 interface AuthContextType {
   user: User | null;
+  authHydrated: boolean;
   login: (email: string, password: string, department: string) => Promise<boolean>;
+  register: (payload: RegisterPayload) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   currentRole: 'department_head' | 'lecturer' | 'moderator';
   setCurrentRole: (role: 'department_head' | 'lecturer' | 'moderator') => void;
@@ -27,10 +39,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [currentRole, setCurrentRole] = useState<'department_head' | 'lecturer' | 'moderator'>('lecturer');
-  const [loading, setLoading] = useState(true);
+  const [authHydrated, setAuthHydrated] = useState(false);
+  const [currentRole, setCurrentRole] = useState<'department_head' | 'lecturer' | 'moderator'>(
+    'lecturer'
+  );
 
-  // Restore session from localStorage on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     const savedRole = localStorage.getItem('currentRole');
@@ -44,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Failed to parse saved user:', e);
       }
     }
-    setLoading(false);
+    setAuthHydrated(true);
   }, []);
 
   const login = async (email: string, password: string, department: string): Promise<boolean> => {
@@ -63,7 +76,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(authenticatedUser);
       localStorage.setItem('user', JSON.stringify(authenticatedUser));
 
-      // Set default role based on user permissions
       let defaultRole: 'department_head' | 'lecturer' | 'moderator' = 'lecturer';
       if (authenticatedUser.isDepartmentHead) {
         defaultRole = 'department_head';
@@ -72,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (authenticatedUser.isModerator) {
         defaultRole = 'moderator';
       }
-      
+
       setCurrentRole(defaultRole);
       localStorage.setItem('currentRole', defaultRole);
 
@@ -80,6 +92,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Login error:', error);
       return false;
+    }
+  };
+
+  const register = async (
+    payload: RegisterPayload
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        return { ok: false, error: data?.error || 'Registration failed.' };
+      }
+
+      setUser(data);
+      localStorage.setItem('user', JSON.stringify(data));
+      setCurrentRole('lecturer');
+      localStorage.setItem('currentRole', 'lecturer');
+      return { ok: true };
+    } catch (error: any) {
+      return { ok: false, error: error?.message || 'Registration error occurred.' };
     }
   };
 
@@ -108,7 +145,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const changePassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
+  const changePassword = async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<boolean> => {
     if (!user) return false;
     try {
       const response = await fetch(`/api/users/${user.id}`, {
@@ -129,19 +169,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('currentRole', role);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
   return (
     <AuthContext.Provider
       value={{
         user,
+        authHydrated,
         login,
+        register,
         logout,
         currentRole,
         setCurrentRole: handleSetCurrentRole,

@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { Suspense } from 'react';
 import {
   LayoutDashboard,
   BookOpen,
@@ -25,30 +26,46 @@ interface SidebarProps {
   setCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
 }
 
-export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: SidebarProps) {
+function SidebarInner({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: SidebarProps) {
   const { user, currentRole, logout } = useAuth();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
 
-  const isActive = (path: string) => pathname === path;
+  const tabParam = searchParams.get('tab');
 
   const departmentHeadLinks = [
     { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'subjects', path: '/department-head/subjects', label: 'Subjects', icon: BookOpen },
-    { id: 'lecturers', path: '/department-head/lecturers', label: 'Lecturers', icon: Users },
-    { id: 'academic', path: '/dashboard', label: 'Academic Settings', icon: Settings },
+    {
+      id: 'lecturers',
+      path: '/department-head/lecturers',
+      label: 'Lecturers & Approval',
+      icon: Users,
+    },
+    {
+      id: 'academic',
+      path: '/dashboard?section=academic',
+      label: 'Academic Settings',
+      icon: Settings,
+    },
     { id: 'finalized', path: '/history', label: 'Finalized Papers', icon: ClipboardCheck },
   ];
 
   const lecturerLinks = [
-    { id: 'subjects', path: '/lecturer/dashboard', label: 'Current Subjects', icon: BookOpen },
+    { id: 'subjects', path: '/lecturer/dashboard', label: 'My Subjects', icon: BookOpen },
     { id: 'history', path: '/lecturer/history', label: 'History', icon: History },
   ];
 
   const moderatorLinks = [
     { id: 'papers', path: '/moderator/dashboard', label: 'Assigned Papers', icon: FileText },
-    { id: 'reports', path: '/moderator/dashboard', label: 'Submitted Reports', icon: ClipboardCheck },
-    { id: 'history', path: '/moderator/history', label: 'History', icon: History },
+    {
+      id: 'reports',
+      path: '/moderator/dashboard?tab=reports',
+      label: 'Submitted Reports',
+      icon: ClipboardCheck,
+    },
+    { id: 'history', path: '/moderator/history', label: 'Finalized Papers', icon: History },
   ];
 
   const links = (
@@ -59,19 +76,31 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
       : moderatorLinks
   ).concat([{ id: 'profile', path: '/profile', label: 'Profile', icon: UserIcon }]);
 
+  const isLinkActive = (id: string, linkPath: string) => {
+    const basePath = linkPath.split('?')[0];
+    if (pathname !== basePath) return false;
+    if (id === 'academic') return searchParams.get('section') === 'academic';
+    if (id === 'dashboard') return searchParams.get('section') !== 'academic';
+    if (id === 'reports') return tabParam === 'reports';
+    if (id === 'papers') return tabParam !== 'reports';
+    return true;
+  };
+
   const sidebarContent = (
     <div className="h-full flex flex-col bg-gray-900 text-white select-none">
-      {/* Header */}
       <div className="p-4 md:p-6 border-b border-gray-800 flex items-center justify-between">
         <div className={`flex items-center gap-3 overflow-hidden ${collapsed ? 'md:hidden' : ''}`}>
-          <img src="/logo.png" alt="Wayamba Crest" className="w-8 h-8 rounded shrink-0 object-contain" />
+          <img
+            src="/logo.png"
+            alt="Wayamba Crest"
+            className="w-8 h-8 rounded shrink-0 object-contain"
+          />
           <div className="min-w-0">
             <h1 className="text-base font-bold text-white truncate">Paper Moderation</h1>
             <p className="text-xs text-gray-400 truncate">Wayamba University</p>
           </div>
         </div>
-        
-        {/* Close button for Mobile Drawer */}
+
         <button
           onClick={() => setMobileOpen(false)}
           className="md:hidden text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
@@ -80,7 +109,6 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
           <X className="w-5 h-5" />
         </button>
 
-        {/* Collapse toggle for Desktop */}
         <button
           onClick={() => setCollapsed((prev) => !prev)}
           className="hidden md:flex text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-gray-800 ml-auto transition-colors"
@@ -90,8 +118,11 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
         </button>
       </div>
 
-      {/* User Card */}
-      <div className={`p-4 border-b border-gray-800 ${collapsed ? 'md:px-2 md:py-4 md:text-center' : ''}`}>
+      <div
+        className={`p-4 border-b border-gray-800 ${
+          collapsed ? 'md:px-2 md:py-4 md:text-center' : ''
+        }`}
+      >
         {!collapsed ? (
           <div className="text-sm">
             <p className="font-semibold text-gray-100 truncate">{user?.name}</p>
@@ -102,18 +133,20 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
           </div>
         ) : (
           <div className="hidden md:flex flex-col items-center">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white" title={user?.name}>
+            <div
+              className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white"
+              title={user?.name}
+            >
               {user?.name?.charAt(0) || 'U'}
             </div>
           </div>
         )}
       </div>
 
-      {/* Nav Links */}
       <nav className="flex-1 p-3 overflow-y-auto">
         <ul className="space-y-1.5">
           {links.map((link) => {
-            const active = isActive(link.path);
+            const active = isLinkActive(link.id, link.path);
             return (
               <li key={link.id}>
                 <Link
@@ -127,7 +160,9 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
                   title={collapsed ? link.label : undefined}
                 >
                   <link.icon className="w-5 h-5 shrink-0" />
-                  <span className={`text-sm truncate ${collapsed ? 'md:hidden' : ''}`}>{link.label}</span>
+                  <span className={`text-sm truncate ${collapsed ? 'md:hidden' : ''}`}>
+                    {link.label}
+                  </span>
                 </Link>
               </li>
             );
@@ -135,7 +170,6 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
         </ul>
       </nav>
 
-      {/* Footer / Logout */}
       <div className="p-3 border-t border-gray-800">
         <button
           onClick={() => {
@@ -143,7 +177,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
             logout();
             router.push('/login');
           }}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-300 hover:bg-red-900/40 hover:text-red-300 w-full transition-colors ${
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-300 hover:bg-red-900/40 hover:text-red-300 w-full transition-colors cursor-pointer ${
             collapsed ? 'md:justify-center md:px-2' : ''
           }`}
           title={collapsed ? 'Logout' : undefined}
@@ -157,7 +191,6 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
 
   return (
     <>
-      {/* Mobile Backdrop Overlay */}
       {mobileOpen && (
         <div
           onClick={() => setMobileOpen(false)}
@@ -165,7 +198,6 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
         />
       )}
 
-      {/* Mobile Drawer (Slide in from left) */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ease-in-out md:hidden ${
           mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
@@ -174,7 +206,6 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
         {sidebarContent}
       </aside>
 
-      {/* Desktop Persistent Sidebar */}
       <aside
         className={`hidden md:flex flex-col h-screen sticky top-0 transition-all duration-300 shrink-0 ${
           collapsed ? 'w-20' : 'w-64'
@@ -183,5 +214,13 @@ export function Sidebar({ mobileOpen, setMobileOpen, collapsed, setCollapsed }: 
         {sidebarContent}
       </aside>
     </>
+  );
+}
+
+export function Sidebar(props: SidebarProps) {
+  return (
+    <Suspense fallback={<aside className="hidden md:flex w-64 h-screen bg-gray-900 shrink-0" />}>
+      <SidebarInner {...props} />
+    </Suspense>
   );
 }
